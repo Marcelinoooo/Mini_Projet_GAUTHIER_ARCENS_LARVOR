@@ -1,51 +1,63 @@
-pragma solidity ^0.4.12;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-// SPDX-License-Identifier: GPL-3.0
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 
-import "./Ownable.sol";
-import "./SafeMath.sol";
+contract Election is Ownable(msg.sender), AccessControl {
+    bytes32 public constant PRESIDENT_ROLE = keccak256("PRESIDENT_ROLE");
+    bytes32 public constant SCRUTINEER_ROLE = keccak256("SCRUTINEER_ROLE");
+    bytes32 public constant SECRETARY_ROLE = keccak256("SECRETARY_ROLE");
 
-contract Election is Ownable {
-
-using SafeMath for uint256;
-
-    // Model a Candidate
-    struct Candidate {
-        uint256 id;
-        string name;
-        uint voteCount;
+    struct Resolution {
+        uint id;
+        string title;
+        uint votesFor;
+        uint votesAgainst;
+        uint votesNeutral;
+        bool open;
     }
 
-    // Store accounts that have voted
-    mapping(address => bool) public voters;
-    // Store Candidates
-    // Fetch Candidate
-    mapping(uint => Candidate) public candidates;
-    // Store Candidates Count
-    uint public candidatesCount;
+    mapping(uint => Resolution) public resolutions;
+    mapping(uint => mapping(address => bool)) public voterRegistry;
+    uint public resolutionCount;
 
-    // voted event
-    event votedEvent ( uint indexed _candidateId);
+  
 
-    function addCandidate (string memory _name) public {
-        candidatesCount ++;
-        candidates[candidatesCount] = Candidate(candidatesCount, _name, 0);
+    function addRole(address account, bytes32 role) public onlyOwner {
+        _grantRole(role, account);
     }
 
-    function vote (uint _candidateId) public {
-        // require that they haven't voted before
-        require(!voters[msg.sender]);
+    function addResolution(string memory title) public onlyRole(SECRETARY_ROLE) {
+        resolutionCount++;
+        resolutions[resolutionCount] = Resolution(resolutionCount, title, 0, 0, 0, true);
+    }
 
-        // require a valid candidate
-        require(_candidateId > 0 && _candidateId <= candidatesCount);
+    function vote(uint resolutionId, uint8 voteType) public {
+        require(voterRegistry[resolutionId][msg.sender] == false, "Already voted");
+        require(voteType >= 1 && voteType <= 3, "Invalid vote type");
+        require(resolutions[resolutionId].open, "Voting is closed");
 
-        // record that voter has voted
-        voters[msg.sender] = true;
+        Resolution storage resolution = resolutions[resolutionId];
 
-        // update candidate vote Count
-        candidates[_candidateId].voteCount ++;
+        if (voteType == 1) {
+            resolution.votesFor++;
+        } else if (voteType == 2) {
+            resolution.votesAgainst++;
+        } else if (voteType == 3) {
+            resolution.votesNeutral++;
+        }
 
-        // trigger voted event
-        emit votedEvent (_candidateId);
+        voterRegistry[resolutionId][msg.sender] = true;
+    }
+
+    function closeResolution(uint resolutionId) public onlyRole(PRESIDENT_ROLE) {
+        resolutions[resolutionId].open = false;
+    }
+
+    function getResults(uint resolutionId) public view returns (uint, uint, uint) {
+        require(!resolutions[resolutionId].open, "Voting still open");
+        Resolution storage resolution = resolutions[resolutionId];
+        return (resolution.votesFor, resolution.votesAgainst, resolution.votesNeutral);
     }
 }
